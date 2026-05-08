@@ -1,0 +1,559 @@
+================================================================================
+  KUKA LBR MED 7 R800 — PHASE I NOTES & INSTRUCTIONS
+  Course: Robotic Systems in Manipulation 2025/2026 — IST
+  Due: 17 May 2026
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+  FILES CREATED (all inside RobotX_sim3d/)
+────────────────────────────────────────────────────────────────────────────────
+
+  STEP 1–2:
+  LBR_MED.m              — DH parameter table (the robot definition)
+  generate_LBR_MED.m     — generates LBR_MED_Lib.slx (DK block + 3D viz)
+  build_LBR_MED_Simul.m  — builds LBR_MED_Simul.slx (validation model)
+  validate_DK.m          — symbolic validation script (4 configs)
+
+  STEP 3 — INVERSE KINEMATICS:
+  IK_LBR_MED.m           — closed-form IK function (kinematic decoupling)
+  validate_IK.m          — round-trip validation: q→DK→IK→DK, check p,R match
+  generate_IK_model.m    — adds IK block to LBR_MED_Lib.slx
+
+  STEP 4 — GEOMETRIC JACOBIAN:
+  Jacobian_LBR_MED.m     — symbolic 6×7 geometric Jacobian function
+  generate_Jacobian_model.m — adds Jacobian block to LBR_MED_Lib.slx
+  validate_Jacobian.m    — numerical differentiation validation + singularity analysis
+
+  STEP 5 — CLIK:
+  generate_CLIK_model.m  — builds LBR_MED_CLIK.slx (full CLIK Simulink model)
+  CLIK_law.m             — auto-generated MATLAB function with the CLIK law
+                           (created automatically when generate_CLIK_model.m runs)
+
+  GENERATED SIMULINK FILES (run the scripts to create them):
+  LBR_MED_Lib.slx        — library with DK, Jacobian, IK blocks
+  LBR_MED_Simul.slx      — DK validation model
+  LBR_MED_CLIK.slx       — CLIK simulation model
+
+
+────────────────────────────────────────────────────────────────────────────────
+  STEP 1 — DH CONVENTION
+────────────────────────────────────────────────────────────────────────────────
+
+  Convention used: Standard Denavit-Hartenberg (Siciliano et al.)
+  Same as the course slides and the provided toolbox (DHTransf.m).
+
+  Transformation per link:
+    A_i^{i-1} = Rz(θ_i) · Tz(d_i) · Tx(a_i) · Rx(α_i)
+
+  Frame assignment rules (algorithmic form):
+    1. Number joint axes z_0, ..., z_6  (z_i = axis of joint i+1)
+    2. Place Frame 0 at base; z_0 points vertically upward
+    3. For i = 1 .. 6:
+         - Origin O_i at intersection of z_{i-1} and z_i
+           (all consecutive axes on this robot INTERSECT → a_i = 0 for all i)
+         - x_i along common normal from z_{i-1} to z_i
+         - y_i completes right-handed frame
+    4. Frame 7 (end-effector): z_7 aligned with z_6; O_7 at flange center
+
+  Physical dimensions (KUKA LBR Med 7 R800):
+    d1 = 0.340 m   base platform to shoulder joint (joint 2)
+    d3 = 0.400 m   shoulder to elbow joint (joint 4)
+    d5 = 0.400 m   elbow to wrist center (joint 6)
+    d7 = 0.126 m   wrist center to flange
+    Total reach (straight up): 0.340+0.400+0.400+0.126 = 1.266 m
+
+  DH PARAMETER TABLE  (class column order: a | α | d | θ)
+  ┌──────┬──────────┬───────────────┬───────────┬─────┐
+  │ Link │  a_i (m) │   α_i (rad)   │  d_i (m)  │ θ_i │
+  ├──────┼──────────┼───────────────┼───────────┼─────┤
+  │  1   │    0     │    +π/2       │   0.340   │  q1 │
+  │  2   │    0     │    −π/2       │   0       │  q2 │
+  │  3   │    0     │    −π/2       │   0.400   │  q3 │
+  │  4   │    0     │    +π/2       │   0       │  q4 │
+  │  5   │    0     │    +π/2       │   0.400   │  q5 │
+  │  6   │    0     │    −π/2       │   0       │  q6 │
+  │  7   │    0     │     0         │   0.126   │  q7 │
+  └──────┴──────────┴───────────────┴───────────┴─────┘
+  All joints are REVOLUTE. The 7th joint makes this robot REDUNDANT
+  (7 DOF with 6-dimensional task space → 1 DOF of null space).
+
+  Home config verification (all q_i = 0):
+    At home the arm stands fully vertical:
+    z0,z2,z4,z6,z7 → +z (upward)
+    z1,z5          → −y (horizontal)
+    z3             → +y (horizontal)
+    End-effector:  p = [0, 0, 1.266] m   R = I₃
+
+  For the REPORT, you need to draw:
+    - A 2-D side/front sketch of the robot with all 7 DH frames drawn
+      (zi axes and xi axes labelled for each link)
+    - The table above
+    - Mark d1, d3, d5, d7 on the sketch
+
+
+────────────────────────────────────────────────────────────────────────────────
+  STEP 2 — DIRECT KINEMATICS (SIMULINK MODEL)
+────────────────────────────────────────────────────────────────────────────────
+
+  HOW TO RUN (in MATLAB, with RobotX_sim3d/ as working directory):
+
+    Step A — Add paths and generate the library:
+      >> cd('path/to/SRMan/RobotX_sim3d')
+      >> generate_LBR_MED
+      (takes ~30 seconds for symbolic simplification)
+      → creates  LBR_MED_Lib.slx
+
+    Step B — Build the validation Simulink model:
+      >> build_LBR_MED_Simul
+      → creates  LBR_MED_Simul.slx
+
+    Step C — Run symbolic validation (no Simulink needed):
+      >> validate_DK
+      → prints computed vs expected for 4 configurations
+      → all errors should be < 1e-10
+
+    Step D — Run the Simulink model:
+      - Open LBR_MED_Simul.slx
+      - Edit Constant blocks q1..q7 to set joint angles
+      - Press Ctrl+T (Run) — read R and p from Display blocks
+      - Compare with the expected values below
+
+  VALIDATION CONFIGURATIONS (easy to check by hand):
+
+    Config 1: q = [0, 0, 0, 0, 0, 0, 0]  — arm straight up
+      p = [0,      0,     1.266]  m
+      R = [1 0 0; 0 1 0; 0 0 1]  (identity)
+      Reasoning: all d values stack vertically; no rotation.
+
+    Config 2: q = [0, π/2, 0, 0, 0, 0, 0]  — shoulder bent horizontal (−x)
+      p = [−0.926, 0,     0.340]  m
+      R = [0 0 −1; 0 1 0; 1 0 0]
+      Reasoning: joint 2 tilts arm 90° → forearm+flange (0.926 m)
+                 extend along −x; only d1=0.340 m remains as height.
+
+    Config 3: q = [π/2, 0, 0, 0, 0, 0, 0]  — base rotated 90°
+      p = [0,      0,     1.266]  m   (same as Config 1!)
+      R = [0 −1 0; 1 0 0; 0 0 1]  (= Rz(π/2))
+      Reasoning: rotating a perfectly vertical arm about its own base
+                 axis does not move the end-effector; only orientation changes.
+
+    Config 4: q = [0, π/2, 0, π/2, 0, 0, 0]  — elbow folded back up
+      p = [−0.400, 0,     0.866]  m
+      R = [1 0 0; 0 1 0; 0 0 1]  (identity)
+      Reasoning: upper arm goes −x by 0.400 m; elbow bends 90° upward;
+                 forearm+flange (0.526 m) add to height from d1=0.340 m
+                 → total height = 0.340+0.400+0.126 = 0.866 m.
+                 Frames realign → R = I₃.
+
+  For the REPORT on Step 2:
+    - Screenshot of LBR_MED_Lib.slx showing the DK block
+    - Screenshot of LBR_MED_Simul.slx with the block diagram
+    - Table of the 4 configs: joint angles | computed p | expected p | error
+    - Statement that errors are < 1e-10 (numerical precision)
+    - Screenshot or output of validate_DK.m
+
+
+────────────────────────────────────────────────────────────────────────────────
+  STEP 3 — INVERSE KINEMATICS (CLOSED-FORM, KINEMATIC DECOUPLING)
+────────────────────────────────────────────────────────────────────────────────
+
+  KEY IDEA — SPHERICAL WRIST DECOUPLING:
+  The LBR MED has α₅=+π/2, α₆=−π/2, α₇=0 and d₆=0.
+  This means axes z₄, z₅, z₆ all intersect at a common point (the wrist center
+  O_W). This is the spherical wrist structure from Siciliano §3.1.
+  Consequence: position of O_W depends only on q₁,q₂,q₃,q₄;
+               orientation of the flange depends only on q₅,q₆,q₇.
+  → Solve position subproblem first, then orientation subproblem.
+
+  REDUNDANCY RESOLUTION (7 DOF → 6-DOF task):
+  The robot has 7 joints but only 6 task-space DOF (3 position + 3 orientation).
+  This leaves 1 null-space DOF. For a unique closed-form solution we FIX:
+    q₃ = 0    (forces the elbow to stay in the vertical plane through z₀)
+  This is the simplest choice; it does not restrict reachability for most tasks.
+
+  DERIVATION — ARM SUBPROBLEM (q₁, q₂, q₄):
+
+    Step 1 — Wrist center position:
+      a_e  = R_e(:,3)           [z-axis of end-effector frame = approach vector]
+      p_W  = p_e − d₇ · a_e    [subtract flange offset along approach direction]
+      p_W  = [p_Wx, p_Wy, p_Wz]
+
+    Step 2 — Solve q₁ (base rotation):
+      q₁ = atan2(p_Wy, p_Wx)
+      Geometric reasoning: project p_W onto horizontal plane;
+      q₁ is the azimuth angle.
+
+    Step 3 — Solve q₄ (elbow angle) via cosine law:
+      L = sqrt(p_Wx² + p_Wy²)     [horizontal distance to wrist center]
+      H = p_Wz − d₁               [vertical distance above joint 2]
+      r² = L² + H²                 [squared distance to wrist center from O₂]
+      cos(q₄) = D = (r² − d₃² − d₅²) / (2·d₃·d₅)
+      sin(q₄) = ±sqrt(1 − D²)     [sign = elbow_up (+1) or elbow_down (−1)]
+      q₄ = atan2(sin(q₄), D)
+      NOTE: |D| > 1 means the target is unreachable (outside workspace).
+
+    Step 4 — Solve q₂ (shoulder angle):
+      γ = atan2(L, H)
+      δ = atan2(d₅·sin(q₄), d₃ + d₅·cos(q₄))
+      q₂ = γ − δ
+      (Two-link planar arm formula applied in the vertical plane through z₀)
+
+    Step 5 — Redundancy (fixed):
+      q₃ = 0
+
+  DERIVATION — WRIST SUBPROBLEM (q₅, q₆, q₇):
+
+    Step 6 — Find the wrist relative rotation:
+      Compute R₄⁰ = R₁ · R₂ · R₃ · R₄   (rotation part of A₁ · A₂ · A₃ · A₄)
+      R_W = (R₄⁰)^T · R_e              (wrist rotation expressed in frame 4)
+      This isolates the contribution of joints 5, 6, 7:
+      R_W = R₅ · R₆ · R₇
+
+    Step 7 — ZYZ-like decomposition:
+      Due to the DH structure (α₅=+π/2, α₆=−π/2, α₇=0), the wrist rotation
+      R_W has the form of a ZYZ-like rotation (similar to Euler angles).
+      Reading off the joint angles from R_W entries:
+        q₆ = atan2(sqrt(r₁₃² + r₂₃²),  r₃₃)      [≠ 0 in non-singular case]
+        q₅ = atan2(−r₂₃, −r₁₃)
+        q₇ = atan2(−r₃₂,  r₃₁)
+      where r_{ij} = R_W(i,j).
+
+  SINGULARITY CONDITIONS:
+
+    S1 — Base singularity:   p_Wx = p_Wy = 0  (wrist center on z₀ axis)
+         q₁ is undefined (atan2(0,0)); any q₁ works → infinite solutions.
+
+    S2 — Elbow singularity:  q₄ = 0 or q₄ = π  (arm fully extended or folded)
+         |D| = 1; sin(q₄) = 0; the Jacobian loses rank.
+
+    S3 — Shoulder singularity:  q₂ = 0  (arm aligned with z₀, degenerate)
+         Related to q₂ + q₄ configuration reaching a singular plane.
+
+    S4 — Wrist singularity:  q₆ = 0 or q₆ = π  (z₅ ∥ z₇)
+         q₅ and q₇ become undefined (add/subtract freely); only q₅+q₇ matters.
+         Detected by: sqrt(r₁₃² + r₂₃²) ≈ 0.
+
+  HOW TO RUN:
+
+    >> cd('path/to/SRMan/RobotX_sim3d')
+    >> validate_IK          % runs 4-config round-trip validation; prints errors
+    >> generate_IK_model    % adds IK block to LBR_MED_Lib.slx
+
+  VALIDATION METHOD (in validate_IK.m):
+    For each test config q_test:
+      1. T_fwd  = DK(q_test)           → extract p_e, R_e
+      2. q_IK   = IK_LBR_MED(p_e, R_e, +1)
+      3. T_back = DK(q_IK)             → extract p_e2, R_e2
+      4. Check: |p_e − p_e2| < 1e-6  AND  |R_e − R_e2|_F < 1e-4
+    The joint angles q_test and q_IK may differ (redundancy gives multiple
+    solutions) but the end-effector pose must match.
+
+  EXPECTED VALIDATION RESULTS:
+    Config 1: q=[0,π/4,0,π/4,0,π/4,0]      → round-trip error < 1e-6
+    Config 2: q=[π/6,π/3,0,π/3,π/4,π/6,π/5] → round-trip error < 1e-6
+    Config 3: q=[−π/4,π/5,0,π/6,π/3,π/4,π/8] → round-trip error < 1e-6
+    (q₃ is fixed to 0 in IK; if q_test has q₃≠0, the IK uses q₃=0 and
+     compensates via other joints — the pose still matches.)
+
+  MATLAB FUNCTION SIGNATURE:
+    q = IK_LBR_MED(p_e, R_e, elbow_sign)
+      p_e        — [3×1] desired end-effector position (m)
+      R_e        — [3×3] desired end-effector rotation matrix
+      elbow_sign — +1 (elbow up) or −1 (elbow down)
+      q          — [7×1] joint angles (rad)
+
+
+────────────────────────────────────────────────────────────────────────────────
+  STEP 4 — GEOMETRIC JACOBIAN
+────────────────────────────────────────────────────────────────────────────────
+
+  DEFINITION (Siciliano slides 54–60):
+  For a serial chain of n revolute joints, the geometric Jacobian J ∈ ℝ^{6×n}
+  is built column by column. For joint i (revolute):
+
+    J_P_i = z_{i-1} × (p_e − O_{i-1})     [linear velocity part, 3×1]
+    J_O_i = z_{i-1}                         [angular velocity part, 3×1]
+
+  where:
+    z_{i-1} = third column of rotation matrix R_{i-1}^0
+              (joint axis i expressed in the base frame)
+    O_{i-1} = position of origin of frame i−1 in base frame
+    p_e     = end-effector position (tip of frame 7)
+
+  Full Jacobian: J = [J_P; J_O] ∈ ℝ^{6×7}
+
+  The relationship to end-effector velocity is:
+    [v_e; ω_e] = J(q) · q̇
+
+  HOW IT IS COMPUTED (Jacobian_LBR_MED.m):
+    - Start with T_full = DKin(Robot) to get symbolic p_e
+    - Iterate i = 1..7, keeping running transform T_i (accumulated up to frame i−1):
+        z_{i-1} = T_i(1:3, 3)
+        O_{i-1} = T_i(1:3, 4)
+        J(1:3, i) = cross(z_{i-1}, p_e − O_{i-1})
+        J(4:6, i) = z_{i-1}
+        T_i = T_i * DHTransf(Robot(i,:))
+    - Apply symbolic simplify() at the end
+
+  HOW TO RUN:
+
+    >> cd('path/to/SRMan/RobotX_sim3d')
+    >> validate_Jacobian        % numerical validation + singularity analysis
+    >> generate_Jacobian_model  % adds Jacobian block to LBR_MED_Lib.slx
+
+  VALIDATION METHOD (in validate_Jacobian.m):
+  Numerical differentiation (central differences, ε = 1e-7):
+    For each column i of J:
+      J_fd(1:3, i) = [p_e(q+ε·eᵢ) − p_e(q−ε·eᵢ)] / (2ε)   [linear part]
+      dR = [R(q+ε·eᵢ) − R(q−ε·eᵢ)] / (2ε)
+      S  = dR · R(q+ε·eᵢ)^T                  [skew-symmetric matrix]
+      J_fd(4:6, i) = [S(3,2); S(1,3); S(2,1)] [extract axial vector]
+
+    Error metric: |J_sym − J_fd|_F  (Frobenius norm)
+    Expected: error < 1e-4 for all test configurations.
+
+  EXPECTED VALIDATION OUTPUT:
+    Config 1 — Home [0,0,0,0,0,0,0]:     |J_sym−J_fd|_F < 1e-6,  rank=6
+    Config 2 — General [0,π/4,0,π/4,0,π/4,0]:  error < 1e-6,    rank=6
+    Config 3 — Another [π/3,π/3,0,π/3,π/4,π/6,π/5]:  error < 1e-6, rank=6
+
+  SINGULARITY ANALYSIS (from validate_Jacobian.m):
+  Config is singular when rank(J) < 6 (smallest singular value ≈ 0).
+
+    S2+S3: q=[0,0,0,0,0,0,0]       — arm straight, elbow at 0
+           rank < 6, smallest sv ≈ 0
+    S2:    q=[0,0,0,π,0,0,0]        — elbow fully extended
+           rank < 6
+    S4:    q=[0,π/4,0,π/4,0,0,0]   — wrist singularity (q₆=0)
+           rank < 6, z₅ ∥ z₇
+    S4:    q=[0,π/4,0,π/4,0,π,0]   — wrist singularity (q₆=π)
+           rank < 6
+
+  RELATIONSHIP TO JOINT LIMITS AND WORKSPACE:
+    The Jacobian is full rank (rank=6) for generic configurations away from
+    singularities. The 7-DOF structure gives a 1-D null space always:
+    null(J) has dimension ≥ 1. At singularities, this grows to ≥ 2.
+
+  MATLAB FUNCTION SIGNATURE:
+    J = Jacobian_LBR_MED()
+      Returns: symbolic [6×7] matrix with variables q1..q7
+
+
+────────────────────────────────────────────────────────────────────────────────
+  STEP 5 — CLIK (CLOSED-LOOP INVERSE KINEMATICS)
+────────────────────────────────────────────────────────────────────────────────
+
+  MOTIVATION:
+  The closed-form IK from Step 3 is fast but sensitive to noise and numerical
+  errors. CLIK is a feedback-based differential IK method that continuously
+  corrects the error between the desired and actual pose, making it robust
+  for trajectory tracking.
+
+  THE CLIK LAW (class slides 69–70):
+
+    q̇ = J⁺(q) · [ṗ_d + K_P·e_P; ω_d + K_O·e_O]  +  (I − J⁺·J) · q̇₀
+
+  Where:
+    J⁺      = right pseudo-inverse of J (since n=7 > r=6):
+              J⁺ = J^T · (J·J^T)⁻¹    [7×6 matrix]
+    e_P     = p_d − p_e(q)             [position error, 3×1]
+    e_O     = r · θ                     [orientation error via angle-axis, 3×1]
+    K_P     = k_P · I₃                 [position gain (diagonal)]
+    K_O     = k_O · I₃                 [orientation gain (diagonal)]
+    ṗ_d, ω_d = desired linear/angular velocity (zero for point-to-point)
+    (I−J⁺J)  = null-space projector     [7×7]
+    q̇₀      = null-space velocity term
+
+  ORIENTATION ERROR COMPUTATION (angle-axis from rotation error):
+    R_err = R_d · R_e(q)^T
+    θ     = acos((trace(R_err) − 1) / 2)
+    if |θ| < 1e-8:  e_O = 0  (no rotation error)
+    else:
+      r   = [R_err(3,2)−R_err(2,3);
+             R_err(1,3)−R_err(3,1);
+             R_err(2,1)−R_err(1,2)] / (2·sin(θ))
+      e_O = r · θ
+
+  NULL-SPACE TERM (joint centering, Step 5 additional requirement):
+    q̇₀ = −k₀ · (q − q_mid)
+    q_mid = midpoints of joint ranges (set to all zeros for symmetric ranges)
+    This keeps joints near their range centers, avoiding limit violations.
+
+  GAIN VALUES USED:
+    K_P = 2.0  (position gain)
+    K_O = 2.0  (orientation gain)
+    k₀  = 0.5  (null-space joint centering gain)
+
+  NUMERICAL ROBUSTNESS — DAMPED PSEUDO-INVERSE:
+  Near singularities, J·J^T becomes nearly singular.
+  Use damped least squares:
+    J⁺ = J^T · (J·J^T + λ²·I₆)⁻¹     with λ² = 1e-6
+  This keeps q̇ bounded at the cost of slightly reduced accuracy near singularities.
+
+  SIMULINK MODEL STRUCTURE (LBR_MED_CLIK.slx):
+
+    [Constant p_d]  ─────────────────────────────────────► [CLIK Function]
+    [Constant R_d]  ────────────────────────────────────►  (MATLAB Function)
+                                                                │
+    [Integrator: q̇ → q] ──────────────────────────────►      │
+         ▲                                                       │
+         └───────────────────── q̇ ─────────────────────────────┘
+                                                                │
+    [To Workspace: q_out] ◄───── q ─── [Integrator] ◄──── q̇  │
+    [Scope]               ◄───── q̇ ─────────────────────────────
+
+    Blocks:
+      p_d       — Constant [3×1], default [0;0;1.266] (arm straight up)
+      R_d       — Constant [9×1] (flattened R_d), default eye(3)(:)
+      CLIK      — MATLAB Function (CLIK_law.m): inputs q,p_d,R_d_flat; output q̇
+      Integrator — 7-state ODE integrator, IC = [0.1;0.1;0;0.1;0;0.1;0]
+      q_out     — To Workspace block (saves q trajectory)
+      Scope     — shows q̇ over time
+
+    Solver: ode45, Stop time: 10 s
+
+  HOW TO RUN:
+
+    >> cd('path/to/SRMan/RobotX_sim3d')
+    >> generate_LBR_MED         % creates LBR_MED_Lib.slx (needed first)
+    >> generate_Jacobian_model  % adds Jacobian block to library
+    >> generate_CLIK_model      % creates LBR_MED_CLIK.slx + CLIK_law.m
+
+    Then in Simulink:
+    - Open LBR_MED_CLIK.slx
+    - Press Ctrl+T to run (10 second simulation)
+    - Observe Scope: q̇ should decay exponentially to zero as e_P, e_O → 0
+    - Check q_out in workspace: final q should satisfy DK(q_final) ≈ (p_d, R_d)
+
+  EXPECTED BEHAVIOR:
+    - q̇ starts large (proportional to initial position/orientation error)
+    - q̇ decays exponentially with time constant ≈ 1/K_P ≈ 0.5 s
+    - After ~5–7 seconds, |e_P| < 1e-3 m and |e_O| < 1e-3 rad
+    - Null-space term keeps joints away from limits; q stays bounded
+
+  COMPARISON WITH STEP 3 IK:
+    The CLIK is a continuous-time feedback solution; the Step 3 IK is an
+    algebraic one-shot solution. For a static target:
+    - IK gives the exact answer instantaneously (no simulation needed)
+    - CLIK converges asymptotically but is more robust near singularities
+      and handles trajectory tracking (moving targets) naturally.
+
+  MATLAB FUNCTION (CLIK_law.m — auto-generated by generate_CLIK_model.m):
+    function q_dot = CLIK(q, p_d, R_d_flat)
+      % q        [7×1] current joint angles (from integrator)
+      % p_d      [3×1] desired position
+      % R_d_flat [9×1] desired rotation (column-major flattened 3×3 matrix)
+      % Returns: q_dot [7×1] joint velocity command
+
+
+────────────────────────────────────────────────────────────────────────────────
+  COMPLETE MATLAB RUN ORDER (first time, clean workspace)
+────────────────────────────────────────────────────────────────────────────────
+
+  Run these in order from the MATLAB command window:
+
+  >> cd('/path/to/SRMan/RobotX_sim3d')
+
+  % Step 2 — Direct Kinematics
+  >> generate_LBR_MED           % ~30 s — creates LBR_MED_Lib.slx
+  >> build_LBR_MED_Simul        % fast   — creates LBR_MED_Simul.slx
+  >> validate_DK                % fast   — prints DK validation table
+
+  % Step 3 — Inverse Kinematics
+  >> validate_IK                % fast   — prints round-trip errors
+  >> generate_IK_model          % adds IK block to LBR_MED_Lib.slx
+
+  % Step 4 — Geometric Jacobian
+  >> validate_Jacobian          % ~2 min — numerical Jacobian validation
+  >> generate_Jacobian_model    % ~2 min — adds Jacobian block to library
+
+  % Step 5 — CLIK
+  >> generate_CLIK_model        % fast   — creates LBR_MED_CLIK.slx
+  % Then: open LBR_MED_CLIK.slx and press Ctrl+T to simulate
+
+  NOTE: Steps 3–5 scripts use addpath to find the toolbox automatically.
+  NOTE: generate_Jacobian_model calls Jacobian_LBR_MED() which calls
+        DKin() symbolically — this is slow (~2 min). Be patient.
+
+
+────────────────────────────────────────────────────────────────────────────────
+  WHAT TO SUBMIT TO THE TEACHER — PHASE I
+────────────────────────────────────────────────────────────────────────────────
+
+  The project says: "provide complete, concise answers using your own code."
+  Typical submission = PDF REPORT + CODE FILES (ZIP).
+
+  ── REPORT (PDF) — one document covering all 5 points: ──
+
+    Point 1 — DH Convention
+      ✓ Hand-drawn (or CAD) sketch of the robot with all 7 DH frames labelled
+      ✓ DH parameter table (columns: Link | a_i | α_i | d_i | θ_i)
+      ✓ Short explanation of the frame assignment procedure used
+
+    Point 2 — Direct Kinematics
+      ✓ Screenshot of LBR_MED_Lib.slx (the library with the DK block)
+      ✓ Screenshot of LBR_MED_Simul.slx (the validation model)
+      ✓ Table: 4 validation configs with computed and expected p and R
+      ✓ Conclusion: model is correct (errors < machine epsilon)
+
+    Point 3 — Inverse Kinematics
+      ✓ Derivation of closed-form solution (kinematic decoupling steps)
+      ✓ List of 4 singularity conditions with geometric explanation (S1–S4)
+      ✓ Screenshot of IK Simulink model (IK block in LBR_MED_Lib.slx)
+      ✓ Validation table: 4 configs, IK→DK round-trip errors < 1e-6
+
+    Point 4 — Geometric Jacobian
+      ✓ Derivation of J (formula J_P = z×(p_e−O), J_O = z for each column)
+      ✓ Screenshot of Jacobian Simulink model
+      ✓ Numerical differentiation validation table (errors < 1e-4)
+      ✓ Singularity analysis: rank(J) at S1–S4 configs (rank drops below 6)
+
+    Point 5 — CLIK
+      ✓ Block diagram description of the CLIK law (equation + block layout)
+      ✓ Screenshot of LBR_MED_CLIK.slx block diagram
+      ✓ Scope screenshot showing q̇ converging to zero
+      ✓ Comparison with IK from Point 3 (one-shot vs. feedback convergence)
+
+  ── CODE FILES (ZIP containing RobotX_sim3d/): ──
+      LBR_MED.m
+      generate_LBR_MED.m
+      build_LBR_MED_Simul.m
+      validate_DK.m
+      IK_LBR_MED.m
+      validate_IK.m
+      generate_IK_model.m
+      Jacobian_LBR_MED.m
+      generate_Jacobian_model.m
+      validate_Jacobian.m
+      generate_CLIK_model.m
+      CLIK_law.m                   (auto-generated; include if created)
+      LBR_MED_Lib.slx              (run generate_LBR_MED + generate_*_model first)
+      LBR_MED_Simul.slx            (run build_LBR_MED_Simul first)
+      LBR_MED_CLIK.slx             (run generate_CLIK_model first)
+
+  ── REPORT FORMAT TIPS: ──
+    - Use PHASE_I_REPORT.md as the basis (convert to PDF)
+    - Replace all [INSERT screenshot ...] placeholders with actual screenshots
+    - Include the DH frame sketch for Point 1 (hand-draw or use Sim3D output)
+    - For Point 5, show both: (a) the CLIK convergence plot, (b) q_final check
+
+
+────────────────────────────────────────────────────────────────────────────────
+  QUICK REFERENCE — MATLAB CONSTANTS
+────────────────────────────────────────────────────────────────────────────────
+
+  d1 = 0.340;   % m — base to joint 2
+  d3 = 0.400;   % m — joint 2 to joint 4
+  d5 = 0.400;   % m — joint 4 to joint 6
+  d7 = 0.126;   % m — joint 6 to flange
+
+  CLIK gains:    Kp = 2.0,  Ko = 2.0,  k0 = 0.5
+  IK redundancy: q3 = 0 (fixed)
+  Damping:       lambda^2 = 1e-6 (damped pseudo-inverse)
+
+  pi/2  = 1.5708 rad = 90°
+  -pi/2 = -1.5708 rad = -90°
+
+================================================================================
+  Generated by Claude Code — May 2026
+================================================================================
