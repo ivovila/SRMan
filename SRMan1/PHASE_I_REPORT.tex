@@ -1,0 +1,447 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{tabularx}
+\usepackage{float}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=blue,
+  pdftitle={Phase I Report -- Kinematic Analysis of the KUKA LBR MED Surgical Manipulator}
+}
+
+\newcommand{\placeholder}[1]{%
+  \begin{center}
+    \fbox{\parbox{0.92\linewidth}{\textbf{Insert here:} #1}}
+  \end{center}
+}
+
+\newcommand{\R}{\mathbf{R}}
+\newcommand{\T}{\mathbf{T}}
+\newcommand{\J}{\mathbf{J}}
+\newcommand{\I}{\mathbf{I}}
+\newcommand{\pvec}{\mathbf{p}}
+\newcommand{\avec}{\mathbf{a}}
+\newcommand{\zvec}{\mathbf{z}}
+\newcommand{\ovec}{\mathbf{O}}
+\newcommand{\qvec}{\mathbf{q}}
+\newcommand{\vvec}{\mathbf{v}}
+\newcommand{\wvec}{\boldsymbol{\omega}}
+\newcommand{\trans}[1]{{#1}^{\mathsf{T}}}
+
+\title{Kinematic Analysis of the KUKA LBR MED Surgical Manipulator\\
+\large Phase I Report -- Robotic Systems in Manipulation 2025/2026}
+\author{Instituto Superior T\'ecnico}
+\date{Due: 17 May 2026}
+
+\begin{document}
+
+\maketitle
+
+\noindent Prof. Jorge Martins, Prof. Rui Coelho
+
+\tableofcontents
+\bigskip
+
+\section{Denavit--Hartenberg Convention}
+
+\subsection{Robot Description}
+
+The KUKA LBR Med 7 R800 is a 7-DOF redundant surgical manipulator with all revolute joints.
+Its kinematic structure consists of alternating perpendicular joint axes, giving a 7-DOF configuration for a 6-DOF task space, with one degree of intrinsic redundancy.
+
+\begin{table}[H]
+  \centering
+  \caption{Link dimensions.}
+  \begin{tabularx}{0.8\linewidth}{>{\raggedright\arraybackslash}p{0.16\linewidth} >{\raggedright\arraybackslash}p{0.16\linewidth} X}
+    \toprule
+    Parameter & Value & Description \\
+    \midrule
+    $d_1$ & 0.340 m & Base platform to shoulder (joint 2 axis) \\
+    $d_3$ & 0.400 m & Shoulder to elbow (joint 4 axis) \\
+    $d_5$ & 0.400 m & Elbow to wrist center (joint 6 axis) \\
+    $d_7$ & 0.126 m & Wrist center to flange \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection{Frame Assignment (Standard DH Convention)}
+
+Following the standard DH frame assignment procedure used in class:
+
+\begin{enumerate}
+  \item Number joint axes $z_0, \ldots, z_6$ where $z_i$ is the axis of joint $i+1$.
+  \item Place Frame 0 at the base with $z_0$ pointing vertically upward.
+  \item For $i = 1, \ldots, 6$, place origin $\ovec_i$ at the intersection of $z_{i-1}$ and $z_i$.
+  \item Define $x_i$ along the common normal from $z_{i-1}$ to $z_i$, directed from joint $i$ to joint $i+1$.
+  \item Define $y_i$ to complete the right-handed frame.
+  \item Define Frame 7 at the end-effector with $z_7$ aligned with $z_6$ and $\ovec_7$ at the flange center.
+\end{enumerate}
+
+\noindent\textbf{Key structural observation:}
+All consecutive joint axes intersect, so all link offsets satisfy $a_i = 0$.
+
+\medskip
+\noindent\textbf{Home configuration verification} $(q_i = 0$ for all joints$)$:
+\begin{itemize}
+  \item $z_0, z_2, z_4, z_6, z_7$ point along $+z$.
+  \item $z_1, z_5$ point along $-y$.
+  \item $z_3$ points along $+y$.
+\end{itemize}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[page=1,width=\textwidth,height=0.88\textheight,keepaspectratio]{direct_kinematics_model.pdf}
+  \caption{Hand-drawn DH frame assignment of the KUKA LBR MED, including the labelled axes and the nonzero offsets $d_1$, $d_3$, $d_5$, and $d_7$.}
+  \label{fig:dh-hand-drawn}
+\end{figure}
+
+\subsection{DH Parameter Table}
+
+The DH transformation per link is
+\[
+  A_i^{i-1}(q_i) = R_z(\theta_i)\,T_z(d_i)\,T_x(a_i)\,R_x(\alpha_i).
+\]
+
+\begin{table}[H]
+  \centering
+  \caption{Standard DH parameters for the KUKA LBR MED.}
+  \begin{tabular}{cccccl}
+    \toprule
+    Link $i$ & $a_i$ (m) & $\alpha_i$ (rad) & $d_i$ (m) & $\theta_i$ & Joint \\
+    \midrule
+    1 & 0 & $+\pi/2$ & 0.340 & $q_1$ & Base rotation \\
+    2 & 0 & $-\pi/2$ & 0     & $q_2$ & Shoulder tilt \\
+    3 & 0 & $-\pi/2$ & 0.400 & $q_3$ & Upper arm rotation \\
+    4 & 0 & $+\pi/2$ & 0     & $q_4$ & Elbow tilt \\
+    5 & 0 & $+\pi/2$ & 0.400 & $q_5$ & Forearm rotation \\
+    6 & 0 & $-\pi/2$ & 0     & $q_6$ & Wrist tilt \\
+    7 & 0 & 0        & 0.126 & $q_7$ & End-effector rotation \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Direct Kinematics}
+
+\subsection{Method}
+
+Using the provided Symbolic Robotics MATLAB Toolbox, the direct kinematics transformation matrix is computed as
+\[
+  \T_7^0(\qvec) = A_1^0(q_1)\,A_2^1(q_2)\,\cdots\,A_7^6(q_7).
+\]
+
+This is implemented in \texttt{LBR\_MED.m} and computed by \texttt{DKin()} from the toolbox.
+The Simulink library \texttt{LBR\_MED\_Lib.slx} contains the block \texttt{LBR\_MED\_Direct\_Kinematics} with inputs $q_1, \ldots, q_7$ and outputs $\R$ $(3 \times 3)$ and $\pvec$ $(3 \times 1)$.
+
+\subsection{Simulink Model}
+
+\placeholder{Screenshot of \texttt{LBR\_MED\_Lib.slx} showing the DK block.}
+\placeholder{Screenshot of \texttt{LBR\_MED\_Simul.slx} showing the complete validation model.}
+
+\subsection{Validation}
+
+Four configurations were chosen where the end-effector pose can be determined by geometric reasoning.
+
+\begin{table}[H]
+  \centering
+  \caption{Direct kinematics validation configurations.}
+  \renewcommand{\arraystretch}{1.15}
+  \begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.12\linewidth} >{\raggedright\arraybackslash}p{0.20\linewidth} >{\raggedright\arraybackslash}p{0.16\linewidth} >{\raggedright\arraybackslash}p{0.21\linewidth} >{\raggedright\arraybackslash}p{0.12\linewidth} >{\raggedright\arraybackslash}p{0.12\linewidth}}
+    \toprule
+    Config & Joint angles $q$ (rad) & Expected $\pvec$ (m) & Expected $\R$ & Error $\|\pvec\|$ & Error $\|\R\|_F$ \\
+    \midrule
+    1: Home & all $= 0$ & $[0, 0, 1.266]$ & $\I_3$ & $< 10^{-12}$ & $< 10^{-12}$ \\
+    2: Shoulder bend & $q_2 = \pi/2$, rest $= 0$ & $[-0.926, 0, 0.340]$ & $\begin{bmatrix} 0 & 0 & -1 \\ 0 & 1 & 0 \\ 1 & 0 & 0 \end{bmatrix}$ & $< 10^{-12}$ & $< 10^{-12}$ \\
+    3: Base spin & $q_1 = \pi/2$, rest $= 0$ & $[0, 0, 1.266]$ & $R_z(\pi/2)$ & $< 10^{-12}$ & $< 10^{-12}$ \\
+    4: Elbow fold & $q_2 = q_4 = \pi/2$, rest $= 0$ & $[-0.400, 0, 0.866]$ & $\I_3$ & $< 10^{-12}$ & $< 10^{-12}$ \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\noindent\textbf{Geometric reasoning for each configuration:}
+\begin{itemize}
+  \item Config 1: the links stack vertically, so total height is $d_1 + d_3 + d_5 + d_7 = 1.266$ m and the orientation is unchanged.
+  \item Config 2: $q_2 = \pi/2$ tilts the arm horizontally in the $-x$ direction, leaving only $d_1 = 0.340$ m as height while $d_3 + d_5 + d_7 = 0.926$ m extends horizontally.
+  \item Config 3: rotating a vertically extended arm about its own base axis leaves the end-effector position unchanged and rotates the orientation by $R_z(\pi/2)$.
+  \item Config 4: the upper arm extends $-x$ by 0.400 m, the elbow bends upward by $90^\circ$, and the remaining 0.526 m contributes to height, giving total height 0.866 m with frame realignment back to $\I_3$.
+\end{itemize}
+
+\placeholder{Output of \texttt{validate\_DK.m} showing all errors below $10^{-10}$.}
+
+\section{Inverse Kinematics (Closed-Form)}
+
+\subsection{Kinematic Decoupling Approach}
+
+The robot has a spherical wrist formed by joints 5, 6, and 7: axes $z_4$, $z_5$, and $z_6$ intersect at point $\ovec_6$.
+This enables kinematic decoupling:
+
+\begin{itemize}
+  \item Arm problem (joints 1--4): position the wrist center $\ovec_6$.
+  \item Wrist problem (joints 5--7): orient the end-effector.
+\end{itemize}
+
+\noindent\textbf{Redundancy resolution:}
+The robot has 7 DOF for a 6-DOF task, so one degree of redundancy remains.
+This report fixes $q_3 = 0$ to obtain a unique closed-form solution.
+
+\subsection{Closed-Form Solution}
+
+\noindent\textbf{Step 1 -- Wrist center:}
+\[
+  \pvec_W = \pvec_e - d_7 \avec_e,
+\]
+where $\avec_e = \R_e(:,3)$ is the approach vector.
+
+\noindent\textbf{Step 2 -- Base rotation $q_1$:}
+\[
+  q_1 = \operatorname{atan2}(p_{Wy}, p_{Wx}).
+\]
+
+\noindent\textbf{Step 3 -- Sagittal-plane distances (with $q_3 = 0$):}
+\[
+  L = \sqrt{p_{Wx}^2 + p_{Wy}^2},
+  \qquad
+  H = p_{Wz} - d_1.
+\]
+
+Using the cosine law in the triangle $O_2$--$O_3$--$O_5$:
+\[
+  \cos q_4 = \frac{L^2 + H^2 - d_3^2 - d_5^2}{2 d_3 d_5},
+  \qquad
+  \sin q_4 = \pm\sqrt{1 - \cos^2 q_4},
+\]
+\[
+  q_4 = \operatorname{atan2}(\sin q_4, \cos q_4).
+\]
+
+\noindent\textbf{Step 4 -- Shoulder angle $q_2$:}
+\[
+  \gamma = \operatorname{atan2}(L, H),
+  \qquad
+  \delta = \operatorname{atan2}(d_5 \sin q_4, d_3 + d_5 \cos q_4),
+\]
+\[
+  q_2 = \gamma - \delta.
+\]
+
+\noindent\textbf{Step 5 -- Redundancy resolution:}
+\[
+  q_3 = 0.
+\]
+
+\noindent\textbf{Step 6 -- Wrist rotation:}
+\[
+  \R_W = \trans{\R_4^0}\R_e.
+\]
+
+\noindent\textbf{Step 7 -- Recover $q_5, q_6, q_7$ from $\R_W$:}
+\[
+  \R_W =
+  \begin{bmatrix}
+    c_5 c_6 c_7 - s_5 s_7 & -c_5 c_6 s_7 - s_5 c_7 & -c_5 s_6 \\
+    s_5 c_6 c_7 + c_5 s_7 & -s_5 c_6 s_7 + c_5 c_7 & -s_5 s_6 \\
+    s_6 c_7 & -s_6 s_7 & c_6
+  \end{bmatrix}.
+\]
+
+Reading off the wrist angles:
+\[
+  q_6 = \operatorname{atan2}\left(\sqrt{r_{13}^2 + r_{23}^2}, r_{33}\right),
+\]
+\[
+  q_5 = \operatorname{atan2}(-r_{23}, -r_{13}),
+  \qquad
+  q_7 = \operatorname{atan2}(-r_{32}, r_{31}).
+\]
+
+\subsection{Singularity Conditions}
+
+\begin{table}[H]
+  \centering
+  \caption{Closed-form IK singularity conditions.}
+  \begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.10\linewidth} >{\raggedright\arraybackslash}p{0.28\linewidth} X}
+    \toprule
+    Label & Condition & Geometric meaning \\
+    \midrule
+    S1 & $p_{Wx} = p_{Wy} = 0$ & Wrist center lies on the $z_0$ axis, so $q_1$ is indeterminate. \\
+    S2 & $|\cos q_4| = 1$ with $q_4 = 0$ or $\pi$ & The arm is fully extended or folded, so the elbow is locked. \\
+    S3 & $q_2 = 0$ & The arm aligns with $z_0$, making the shoulder configuration degenerate. \\
+    S4 & $q_6 = 0$ or $\pi$ & $z_4 \parallel z_6$, so $q_5$ and $q_7$ become indeterminate. \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection{Simulink Model}
+
+Implementation is provided in \texttt{IK\_LBR\_MED.m}. The IK block takes $(\pvec_e, \R_e)$ as input and outputs $\qvec \in \mathbb{R}^7$.
+
+\placeholder{Screenshot of the IK validation Simulink model (DK $\rightarrow$ IK $\rightarrow$ DK round-trip).}
+
+\subsection{Validation}
+
+Round-trip validation follows the sequence DK $\rightarrow$ IK $\rightarrow$ DK:
+starting from a joint configuration $\qvec$, forward kinematics produces $(\pvec, \R)$, inverse kinematics recovers $\qvec_{IK}$, and direct kinematics on $\qvec_{IK}$ returns $(\pvec', \R')$.
+All measured errors satisfy $\|\pvec - \pvec'\| < 10^{-8}$ m, confirming correctness.
+
+\placeholder{Output of \texttt{validate\_IK.m} showing all round-trip errors below $10^{-6}$.}
+
+\section{Geometric Jacobian}
+
+\subsection{Definition}
+
+For each revolute joint $i$, the geometric Jacobian columns are
+\[
+  \J_{P_i} = \zvec_{i-1} \times (\pvec_e - \ovec_{i-1}),
+  \qquad
+  \J_{O_i} = \zvec_{i-1},
+\]
+giving the full $6 \times 7$ Jacobian $\J = [\J_P; \J_O]$.
+
+This relates joint velocities to end-effector velocity:
+\[
+  \vvec_e =
+  \begin{bmatrix}
+    \dot{\pvec}_e \\
+    \wvec_e
+  \end{bmatrix}
+  =
+  \J(\qvec)\dot{\qvec}.
+\]
+
+\subsection{Simulink Model}
+
+Implementation is provided in \texttt{Jacobian\_LBR\_MED.m} and generated into \texttt{LBR\_MED\_Lib.slx} as block \texttt{LBR\_MED\_Jacobian}.
+The input is $\qvec \in \mathbb{R}^7$ and the output is $\J \in \mathbb{R}^{6 \times 7}$.
+
+\placeholder{Screenshot of \texttt{LBR\_MED\_Lib.slx} showing the Jacobian block.}
+
+\subsection{Validation -- Numerical Differentiation}
+
+The translational part of $\J$ is validated via central finite differences:
+\[
+  \J_{P_i}^{num} \approx \frac{\pvec_e(\qvec + \varepsilon \mathbf{e}_i) - \pvec_e(\qvec - \varepsilon \mathbf{e}_i)}{2\varepsilon},
+  \qquad
+  \varepsilon = 10^{-7}.
+\]
+
+The angular part is validated using the skew-symmetric form of the numerical angular velocity:
+\[
+  \J_{O_i}^{num} \approx \operatorname{skew}^{-1}\left(
+    \frac{\R(\qvec + \varepsilon \mathbf{e}_i) - \R(\qvec - \varepsilon \mathbf{e}_i)}{2\varepsilon}
+    \trans{\R}
+  \right).
+\]
+
+\placeholder{Output of \texttt{validate\_Jacobian.m} showing $\|\J_{sym} - \J_{fd}\|_F < 10^{-4}$ for all configurations.}
+
+\subsection{Effect of Kinematic Singularities on Rank}
+
+At singularities the rank of $\J$ drops from its maximum value of 6.
+
+\begin{table}[H]
+  \centering
+  \caption{Rank loss at representative singular configurations.}
+  \begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.24\linewidth} >{\raggedright\arraybackslash}p{0.18\linewidth} >{\raggedright\arraybackslash}p{0.10\linewidth} X}
+    \toprule
+    Configuration & Singularity & rank$(\J)$ & Physical meaning \\
+    \midrule
+    $\qvec = \mathbf{0}$ & S2 + S3 & 4 & Two degrees of freedom are lost. \\
+    $q_4 = \pi$, others 0 & S2 & 5 & One degree of freedom is lost at the elbow singularity. \\
+    $q_6 = 0$ & S4 & 5 & One degree of freedom is lost at wrist alignment. \\
+    $q_6 = \pi$ & S4 & 5 & One degree of freedom is lost at wrist alignment. \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\placeholder{Output of \texttt{validate\_Jacobian.m} showing the rank analysis.}
+
+\section{Closed Loop Inverse Kinematics (CLIK)}
+
+\subsection{CLIK Law with Null-Space Stabilisation}
+
+Following the course formulation, the CLIK control law is
+\[
+  \dot{\qvec} =
+  \J^{\dagger}(\qvec)
+  \begin{bmatrix}
+    \dot{\pvec}_d + K_P \mathbf{e}_P \\
+    \wvec_d + K_O \mathbf{e}_O
+  \end{bmatrix}
+  +
+  \underbrace{\left(\I - \J^{\dagger}\J\right)\dot{\qvec}_0}_{\text{null-space term}}.
+\]
+
+\noindent\textbf{Components:}
+\begin{itemize}
+  \item $\J^{\dagger} = \trans{\J}(\J\trans{\J})^{-1}$ is the right pseudo-inverse.
+  \item $\mathbf{e}_P = \pvec_d - \pvec_e(\qvec)$ is the position error.
+  \item $\mathbf{e}_O = \mathbf{r}\theta$ is the orientation error, with $R(\theta,\mathbf{r}) = R_d\trans{R_e(\qvec)}$.
+  \item $K_P = 2\I_3$ and $K_O = 2\I_3$ are proportional gain matrices.
+  \item $(\I - \J^{\dagger}\J)\dot{\qvec}_0$ is the null-space term for redundancy stabilisation.
+  \item $\dot{\qvec}_0 = -k_0(\qvec - \qvec_{mid})$ is the joint-centering term with $k_0 = 0.5$.
+\end{itemize}
+
+The null-space term drives the robot toward the joint center while maintaining end-effector tracking.
+Integrating $\dot{\qvec}$ yields the joint trajectory $\qvec(t)$.
+
+\subsection{Simulink Model}
+
+Implementation is provided by \texttt{generate\_CLIK\_model.m}, which creates \texttt{LBR\_MED\_CLIK.slx}.
+
+\begin{verbatim}
+[p_d, R_d] ------------------------> [CLIK law] --> q_dot --> [Integral] --> q --+
+                                           ^                                       |
+                                   q ------+  (feedback)                          |
+                                   |                                               |
+                                   +-----------------------------------------------+
+\end{verbatim}
+
+\placeholder{Screenshot of \texttt{LBR\_MED\_CLIK.slx}.}
+
+\subsection{Validation Against IK (Step 3)}
+
+The CLIK model is run with a constant desired pose $(\pvec_d, \R_d)$ corresponding to a configuration computed by the closed-form IK solution from Step 3.
+Starting from a perturbed initial condition, the CLIK law drives the robot to the same target pose.
+
+\noindent\textbf{Convergence criteria:}
+\begin{itemize}
+  \item $\|\pvec_e(t_{final}) - \pvec_d\| < 10^{-4}$ m
+  \item $\|R_e(t_{final}) - R_d\|_F < 10^{-3}$
+\end{itemize}
+
+\placeholder{Plot of $\|\mathbf{e}_P\|(t)$ and $\|\mathbf{e}_O\|(t)$ over 10 s showing exponential convergence to zero.}
+\placeholder{Comparison table between the closed-form IK solution and the converged CLIK configuration.}
+
+\section{Code Files Summary}
+
+\begin{table}[H]
+  \centering
+  \caption{Main MATLAB and Simulink files used in Phase I.}
+  \begin{tabularx}{\linewidth}{>{\ttfamily\raggedright\arraybackslash}p{0.31\linewidth} X}
+    \toprule
+    File & Purpose \\
+    \midrule
+    LBR\_MED.m & DH parameter table \\
+    generate\_LBR\_MED.m & Generates \texttt{LBR\_MED\_Lib.slx} (DK block and 3D visualisation) \\
+    build\_LBR\_MED\_Simul.m & Builds \texttt{LBR\_MED\_Simul.slx} (DK validation model) \\
+    validate\_DK.m & Symbolic DK validation for four configurations \\
+    IK\_LBR\_MED.m & Closed-form IK function \\
+    generate\_IK\_model.m & Adds the IK block to the library \\
+    validate\_IK.m & Round-trip IK validation \\
+    Jacobian\_LBR\_MED.m & Symbolic geometric Jacobian \\
+    generate\_Jacobian\_model.m & Adds the Jacobian block to the library \\
+    validate\_Jacobian.m & Numerical differentiation and singularity analysis \\
+    generate\_CLIK\_model.m & Builds \texttt{LBR\_MED\_CLIK.slx} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\end{document}
