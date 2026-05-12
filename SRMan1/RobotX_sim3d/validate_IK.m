@@ -5,13 +5,13 @@
 addpath(fullfile(fileparts(mfilename('fullpath')), '..', ...
     'Robotics_Symbolic_Matlab_Toolbox-2'));
 
-syms q1s q2s q3s q4s q5s q6s q7s real
+syms q1 q2 q3 q4 q5 q6 q7 real
 Robot = LBR_MED();
 T_sym = DKin(Robot);
-vars  = {q1s,q2s,q3s,q4s,q5s,q6s,q7s};
+vars  = {q1,q2,q3,q4,q5,q6,q7};
 
 % Helper: evaluate DK numerically at a joint vector
-DK = @(q) double(subs(T_sym, vars, num2cell(q')));
+DK = @(q) double(subs(T_sym, vars, num2cell(q(:)')));
 
 fprintf('=== IK Round-Trip Validation ===\n\n');
 
