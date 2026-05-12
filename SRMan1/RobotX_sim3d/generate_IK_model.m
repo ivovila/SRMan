@@ -7,6 +7,7 @@ addpath(fullfile(fileparts(mfilename('fullpath')), '..', ...
 
 mdl = 'LBR_MED_Lib';
 if ~bdIsLoaded(mdl), load_system(mdl); end
+set_param(mdl, 'Lock', 'off');
 
 %% Add IK block as an embedded MATLAB Function
 % The block wraps IK_LBR_MED.m; inputs: p_e(3), R_e(9=flat), elbow_sign(1)

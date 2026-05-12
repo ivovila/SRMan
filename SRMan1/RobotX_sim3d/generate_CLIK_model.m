@@ -1,144 +1,120 @@
 %% generate_CLIK_model.m
 %  Builds LBR_MED_CLIK.slx — Closed Loop Inverse Kinematics Simulink model.
 %
-%  CLIK LAW (class slides 69-70):
-%    q_dot = J_pinv(q) * [p_dot_d + Kp*(p_d - p_e(q));
-%                         w_d    + Ko*e_O            ]
-%           + (I - J_pinv*J) * q_dot0
+%  CLIK LAW (Siciliano):
+%    q_dot = J_pinv*[Kp*(p_d-p_e); Ko*e_O] + (I-J_pinv*J)*(-k0*(q-q_mid))
 %
-%  where:
-%    J_pinv = J^T * (J*J^T)^{-1}   (right pseudo-inverse, 7x6)
-%    e_O    = r * theta,  R(theta,r) = R_d * R_e^T  (orientation error)
-%    (I-J_pinv*J)*q_dot0 = null-space term for redundancy stabilisation
-%    q_dot0 = -k0*(q - q_mid)  (joint centering potential)
-%
-%  Block layout:
-%    [Constant p_d, R_d]  --->  [CLIK Function]  ---> [Integrator] -> q
-%    [Zero w_d, p_dot_d]           ^                        |
-%                                  |                        v
-%                               [DK block]  <--------------+
-%
-%  Run generate_LBR_MED.m and generate_Jacobian_model.m first.
+%  Run generate_LBR_MED.m first.
 
 addpath(fullfile(fileparts(mfilename('fullpath')), '..', ...
     'Robotics_Symbolic_Matlab_Toolbox-2'));
 
-mdl     = 'LBR_MED_CLIK';
-libName = 'LBR_MED_Lib';
+scriptDir = fileparts(mfilename('fullpath'));
+mdl = 'LBR_MED_CLIK';
 
-if ~exist([libName '.slx'],'file')
-    error('Run generate_LBR_MED.m and generate_Jacobian_model.m first.');
-end
-
-if bdIsLoaded(mdl), close_system(mdl,0); end
+if bdIsLoaded(mdl), close_system(mdl, 0); end
 new_system(mdl);
 open_system(mdl);
-load_system(libName);
 
-%% Gain parameters (edit here to tune)
-Kp  = 2.0;   % position gain
-Ko  = 2.0;   % orientation gain
-k0  = 0.5;   % null-space joint-centering gain
+%% Gains
+Kp = 2.0;  Ko = 2.0;  k0 = 0.5;
 
-% Joint limits center (rad) — approximate midpoints
-q_mid = [0; 0; 0; 0; 0; 0; 0];
-
-%% MATLAB Function block: CLIK law
-clikSrc = sprintf([ ...
-'function q_dot = CLIK(q, p_d, R_d_flat)\n' ...
-'%% CLIK law for KUKA LBR MED 7 R800\n' ...
-'Kp  = %g * eye(3);\n' ...
-'Ko  = %g * eye(3);\n' ...
-'k0  = %g;\n' ...
-'q_mid = [%s]'';\n' ...
-'\n' ...
-'%% DK\n' ...
-'[R_e, p_e] = LBR_MED_Direct_Kinematics(q(1),q(2),q(3),q(4),q(5),q(6),q(7));\n' ...
-'\n' ...
-'%% Jacobian\n' ...
-'J = LBR_MED_Jacobian(q(1),q(2),q(3),q(4),q(5),q(6),q(7));\n' ...
-'\n' ...
-'%% Pseudo-inverse\n' ...
-'JJT = J*J'';\n' ...
-'J_pinv = J'' / (JJT + 1e-6*eye(6));  %% damped\n' ...
-'\n' ...
-'%% Position error\n' ...
-'e_p = p_d - p_e;\n' ...
-'\n' ...
-'%% Orientation error (angle-axis from R_d*R_e'')\n' ...
-'R_d = reshape(R_d_flat,3,3);\n' ...
-'Re  = R_d * R_e'';\n' ...
-'theta = acos(min(1,max(-1,(trace(Re)-1)/2)));\n' ...
-'if abs(theta) < 1e-8\n' ...
-'    e_O = zeros(3,1);\n' ...
-'else\n' ...
-'    r = [Re(3,2)-Re(2,3); Re(1,3)-Re(3,1); Re(2,1)-Re(1,2)]/(2*sin(theta));\n' ...
-'    e_O = r * theta;\n' ...
-'end\n' ...
-'\n' ...
-'%% Task velocity\n' ...
-'v = [Kp*e_p; Ko*e_O];\n' ...
-'\n' ...
-'%% Null-space term (joint centering)\n' ...
-'q_dot0 = -k0*(q - q_mid);\n' ...
-'N = eye(7) - J_pinv*J;\n' ...
-'\n' ...
-'q_dot = J_pinv*v + N*q_dot0;\n' ...
-'end\n'], Kp, Ko, k0, num2str(q_mid(:)', '%.4f '));
-
-% Write CLIK function to file so Simulink can see it
-fid = fopen(fullfile(fileparts(mfilename('fullpath')), 'CLIK_law.m'), 'w');
-fprintf(fid, '%s', clikSrc);
+%% Write full CLIK implementation to CLIK_law.m (called by Simulink block)
+lawLines = {
+    sprintf('function q_dot = CLIK_law(q, p_d, R_d_flat)')
+    sprintf('Kp = %g*eye(3); Ko = %g*eye(3); k0 = %g;', Kp, Ko, k0)
+    'q_mid = zeros(7,1);'
+    'dh = [0.340,0,pi/2; 0,0,-pi/2; 0.400,0,-pi/2; 0,0,pi/2; 0.400,0,pi/2; 0,0,-pi/2; 0.126,0,0];'
+    'T = eye(4); Tf = zeros(4,4,8); Tf(:,:,1) = T;'
+    'for i = 1:7'
+    '    d=dh(i,1); a=dh(i,2); al=dh(i,3);'
+    '    c=cos(q(i)); s=sin(q(i)); ca=cos(al); sa=sin(al);'
+    '    T = T*[c,-s*ca,s*sa,a*c; s,c*ca,-c*sa,a*s; 0,sa,ca,d; 0,0,0,1];'
+    '    Tf(:,:,i+1) = T;'
+    'end'
+    'R_e = T(1:3,1:3); p_e = T(1:3,4);'
+    'J = zeros(6,7);'
+    'for i = 1:7'
+    '    z = Tf(1:3,3,i); o = Tf(1:3,4,i);'
+    '    J(1:3,i) = cross(z,p_e-o); J(4:6,i) = z;'
+    'end'
+    'J_pinv = J'' / (J*J'' + 1e-6*eye(6));'
+    'e_p = p_d - p_e;'
+    'R_d = reshape(R_d_flat,3,3); Re = R_d*R_e'';'
+    'th = acos(min(1,max(-1,(trace(Re)-1)/2)));'
+    'if abs(th) < 1e-8, e_O = zeros(3,1);'
+    'else'
+    '    r = [Re(3,2)-Re(2,3);Re(1,3)-Re(3,1);Re(2,1)-Re(1,2)]/(2*sin(th));'
+    '    e_O = r*th;'
+    'end'
+    'v = [Kp*e_p; Ko*e_O];'
+    'q_dot = J_pinv*v + (eye(7)-J_pinv*J)*(-k0*(q-q_mid));'
+    'end'
+};
+fid = fopen(fullfile(scriptDir, 'CLIK_law.m'), 'w');
+fprintf(fid, '%s\n', strjoin(lawLines, newline));
 fclose(fid);
 
-%% Target (constant desired pose)
-% Default: arm straight up at home
-p_d_val = [0; 0; 1.266];
-R_d_val = eye(3);
+%% Tiny wrapper injected into the Simulink MATLAB Function block
+wrapSrc = sprintf('function q_dot = CLIK(q, p_d, R_d_flat)\nq_dot = CLIK_law(q, p_d, R_d_flat);\nend\n');
 
-%% Add blocks
-x0=50; dy=80;
-
-% Desired position constant
+%% Add blocks (no VectorParams1D — not valid in modern MATLAB)
 add_block('simulink/Sources/Constant', [mdl '/p_d'], ...
-    'Value', mat2str(p_d_val), 'Position', [x0,50,x0+100,90]);
+    'Value', '[0;0;1.266]', 'OutDataTypeStr', 'double', ...
+    'Position', [50,50,160,80]);
 
-% Desired rotation constant (flattened 9-vector)
 add_block('simulink/Sources/Constant', [mdl '/R_d'], ...
-    'Value', mat2str(R_d_val(:)'), 'Position', [x0,110,x0+100,150]);
+    'Value', '[1 0 0 0 1 0 0 0 1]', 'OutDataTypeStr', 'double', ...
+    'Position', [50,120,160,150]);
 
-% Initial joint angles
-add_block('simulink/Sources/Constant', [mdl '/q0'], ...
-    'Value', '[0.1;0.1;0;0.1;0;0.1;0]', 'Position', [x0,170,x0+100,210]);
-
-% Integrator (7 states = q)
 add_block('simulink/Continuous/Integrator', [mdl '/Integrator'], ...
     'InitialCondition', '[0.1;0.1;0;0.1;0;0.1;0]', ...
-    'Position', [500,120,560,160]);
+    'Position', [500,100,560,150]);
 
-% MATLAB Function block for CLIK
 add_block('simulink/User-Defined Functions/MATLAB Function', ...
-    [mdl '/CLIK'], 'Position', [300,80,480,200]);
+    [mdl '/CLIK'], 'Position', [280,50,460,210]);
 
-% To Workspace for q
 add_block('simulink/Sinks/To Workspace', [mdl '/q_out'], ...
-    'VariableName', 'q_out', 'Position', [620,120,720,160]);
+    'VariableName', 'q_CLIK', 'SaveFormat', 'Array', ...
+    'Position', [630,100,730,140]);
 
-% Scope
 add_block('simulink/Sinks/Scope', [mdl '/Scope'], ...
-    'Position', [620,60,680,100]);
+    'Position', [630,40,690,80]);
 
-%% Connections
-add_line(mdl, 'Integrator/1', 'CLIK/1', 'autorouting','on');
-add_line(mdl, 'p_d/1',        'CLIK/2', 'autorouting','on');
-add_line(mdl, 'R_d/1',        'CLIK/3', 'autorouting','on');
+%% Inject wrapper into MATLAB Function block via Stateflow API
+rt = sfroot;
+m  = rt.find('-isa','Stateflow.EMChart','Path',[mdl '/CLIK']);
+if isempty(m)
+    m = rt.find('-isa','Stateflow.EMChart','Name','CLIK');
+end
+if isempty(m)
+    m = rt.find('-isa','Stateflow.EMFunction','Name','CLIK');
+end
+if ~isempty(m)
+    m(1).Script = wrapSrc;
+    disp('CLIK wrapper injected into block.');
+else
+    warning('Stateflow injection failed — paste contents of CLIK_law.m into the CLIK block manually.');
+end
+
+%% Save to script directory, close, reopen — forces port creation from function signature
+slxPath = fullfile(scriptDir, [mdl '.slx']);
+save_system(mdl, slxPath);
+close_system(mdl, 0);
+load_system(slxPath);
+open_system(mdl);
+
+%% Add connections (ports now exist after reopen)
+add_line(mdl, 'Integrator/1', 'CLIK/1',       'autorouting','on');
+add_line(mdl, 'p_d/1',        'CLIK/2',       'autorouting','on');
+add_line(mdl, 'R_d/1',        'CLIK/3',       'autorouting','on');
 add_line(mdl, 'CLIK/1',       'Integrator/1', 'autorouting','on');
-add_line(mdl, 'Integrator/1', 'q_out/1',  'autorouting','on');
-add_line(mdl, 'CLIK/1',       'Scope/1',  'autorouting','on');
+add_line(mdl, 'Integrator/1', 'q_out/1',      'autorouting','on');
+add_line(mdl, 'CLIK/1',       'Scope/1',      'autorouting','on');
 
 %% Simulation settings
 set_param(mdl, 'StopTime', '10', 'Solver', 'ode45');
+save_system(mdl, slxPath);
 
-save_system(mdl);
-fprintf('CLIK model saved as %s.slx\n', mdl);
-fprintf('Open it in Simulink and run (Ctrl+T) to simulate convergence.\n');
+fprintf('CLIK model saved: %s\n', slxPath);
+fprintf('Press Ctrl+T in Simulink to run. Then run validate_CLIK.m for plots.\n');

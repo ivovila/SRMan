@@ -44,21 +44,14 @@ for i = 1:7
         'Position', [xConst, yConst+(i-1)*dy, xConst+w, yConst+(i-1)*dy+h]);
 end
 
-%% --- Mux ---------------------------------------------------------------
-muxBlk = [mdl '/Mux'];
-add_block('simulink/Signal Routing/Mux', muxBlk, ...
-    'Inputs',   '7', ...
-    'Position', [xMux, yMux-150, xMux+20, yMux+150]);
-
-for i = 1:7
-    add_line(mdl, sprintf('q%d/1', i), 'Mux/1', 'autorouting', 'on');
-end
-
 %% --- DK function block (from library) ----------------------------------
 dkBlk = [mdl '/DK'];
 add_block([libName '/LBR_MED_Direct_Kinematics'], dkBlk, ...
     'Position', [xDK, yDK, xDK+160, yDK+100]);
-add_line(mdl, 'Mux/1', 'DK/1', 'autorouting', 'on');
+
+for i = 1:7
+    add_line(mdl, sprintf('q%d/1', i), sprintf('DK/%d', i), 'autorouting', 'on');
+end
 
 %% --- Display blocks for R and p ----------------------------------------
 dispR = [mdl '/R (3x3)'];

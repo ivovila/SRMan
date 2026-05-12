@@ -8,6 +8,7 @@ addpath(fullfile(fileparts(mfilename('fullpath')), '..', ...
 
 mdl = 'LBR_MED_Lib';
 if ~bdIsLoaded(mdl), load_system(mdl); end
+set_param(mdl, 'Lock', 'off');
 
 %% Compute symbolic Jacobian and generate block
 disp('Computing symbolic Jacobian...');
